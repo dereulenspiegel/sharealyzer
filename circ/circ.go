@@ -21,6 +21,7 @@ import (
 	"github.com/umahmood/haversine"
 )
 
+// Scraper uses a circ client to scrape a region for available circ scooters
 type Scraper struct {
 	client *Client
 
@@ -38,11 +39,12 @@ type Scraper struct {
 	phoneNumber string
 }
 
-func NewScraper(client *Client, scrapeInterval time.Duration,
+// NewScraper creates a new Scraper with the the given Client. It lets you specify
+// a rectangle of geo coordinates. phonePrefix and phoneNumber are necessary for authentication.
+func NewScraper(client *Client,
 	latTopLeft, lonTopLeft, latBottomRight, lonBottomRight float64, phonePrefix, phoneNumber string) *Scraper {
 	return &Scraper{
 		client:               client,
-		scrapeInterval:       scrapeInterval,
 		TokenRefreshInterval: DefaultTokenRefreshDuration,
 		latTopLeft:           latTopLeft,
 		lonTopLeft:           lonTopLeft,
@@ -54,6 +56,8 @@ func NewScraper(client *Client, scrapeInterval time.Duration,
 	}
 }
 
+// Scrape starts the scraping process with the specified interval and returns a channel with items containing
+// the scrape date and all scraped scooters
 func (c *Scraper) Scrape(ctx context.Context, scrapeInterval time.Duration) chan *ScrapeResult {
 	out := make(chan *ScrapeResult, 100)
 	go func() {
@@ -129,24 +133,30 @@ func (c *Scraper) doScrape() (scooters []*Scooter, err error) {
 	return
 }
 
+// ScrapeResult contains all scraped scooters with the date when these scooters were scraped from the API
 type ScrapeResult struct {
 	Date     time.Time
 	Scooters []*Scooter
 }
 
+// ScrapeDate returns the date when this ScrapeResult was created
 func (c *ScrapeResult) ScrapeDate() time.Time {
 	return c.Date
 }
 
+// Provider returns from which provider this was scraped, here it is always circ
 func (c *ScrapeResult) Provider() string {
 	return "circ"
 }
 
+// Content returns the serialized content, in this case the slice of scraped scooters
 func (c *ScrapeResult) Content() []byte {
 	data, _ := json.Marshal(c.Scooters)
 	return data
 }
 
+// SplitChan splits a channel of ScrapeResults so these results can be used in two different process like
+// storage and aggregation
 func SplitChan(in chan *ScrapeResult) (chan *ScrapeResult, chan *ScrapeResult) {
 	out1 := make(chan *ScrapeResult, 100)
 	out2 := make(chan *ScrapeResult, 100)
@@ -161,11 +171,13 @@ func SplitChan(in chan *ScrapeResult) (chan *ScrapeResult, chan *ScrapeResult) {
 	return out1, out2
 }
 
+// TripAggregator tries to aggregate ScrapeResults to Trips
 type TripAggregator struct {
 	unfinishedTrips map[string]*cripper.Trip
 	lastScooters    Scooters
 }
 
+// NewTripAggregator creates a new TripAggregator
 func NewTripAggregator() *TripAggregator {
 	return &TripAggregator{
 		unfinishedTrips: make(map[string]*cripper.Trip),
@@ -173,12 +185,13 @@ func NewTripAggregator() *TripAggregator {
 	}
 }
 
+// Aggregate takes a channel of ScrapeResult and returns a channel of aggregated Trips
 func (c *TripAggregator) Aggregate(in chan *ScrapeResult) <-chan *cripper.Trip {
 	out := make(chan *cripper.Trip, 100)
 	go func() {
 		for res := range in {
 			scooters := NewScooters(res.Scooters)
-			vanishedScooter := scooters.difference(c.lastScooters)
+			vanishedScooter := scooters.Difference(c.lastScooters)
 			for id, scooter := range vanishedScooter {
 				trip := &cripper.Trip{
 					ScooterID:        id,
@@ -214,8 +227,11 @@ func (c *TripAggregator) Aggregate(in chan *ScrapeResult) <-chan *cripper.Trip {
 	return out
 }
 
+// Scooters is a map of Scooters in a ScrapeResult. This makes it easier to create differences
+// from other sets of Scooters and to look up Scooters
 type Scooters map[string]*Scooter
 
+// NewScooters creates a new map based Scooters type from a slice of Scooters
 func NewScooters(in []*Scooter) Scooters {
 	s := make(Scooters)
 	for _, scooter := range in {
@@ -224,7 +240,8 @@ func NewScooters(in []*Scooter) Scooters {
 	return s
 }
 
-func (s Scooters) difference(ns Scooters) Scooters {
+// Difference returns all scooters which exist in ns but not in this Scooters instance
+func (s Scooters) Difference(ns Scooters) Scooters {
 	s2 := make(Scooters)
 
 	for id, scooter := range ns {
@@ -235,6 +252,8 @@ func (s Scooters) difference(ns Scooters) Scooters {
 	return s2
 }
 
+// FileScraper uses a folder structure as input to generate a channel of ScrapeResults.
+// It also watches for new subfolders and files and feeds them to the channel.
 type FileScraper struct {
 	baseDir string
 
@@ -245,6 +264,7 @@ type FileScraper struct {
 	watchMutex             *sync.Mutex
 }
 
+// NewFileScraper creates a new FileScraper scraping the given baseDir
 func NewFileScraper(baseDir string) *FileScraper {
 	return &FileScraper{
 		baseDir:      baseDir,
@@ -253,6 +273,8 @@ func NewFileScraper(baseDir string) *FileScraper {
 	}
 }
 
+// Scrape actually starts the scraping process. This means reading all existing files and then
+// watching for new files.
 func (c *FileScraper) Scrape(ctx context.Context) (<-chan *ScrapeResult, error) {
 	var subfolderNames []string
 
