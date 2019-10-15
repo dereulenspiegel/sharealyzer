@@ -279,10 +279,10 @@ func (c *FileScraper) Scrape(ctx context.Context) (<-chan *ScrapeResult, error) 
 	fileBufferChan := make(chan *ScrapeResult, 1000)
 	buffering := true
 	err = c.folderWatcher.Add(c.baseDir)
-	folderCtx, folderCancel := context.WithCancel(ctx)
 	if err != nil {
 		return nil, err
 	}
+	folderCtx, folderCancel := context.WithCancel(ctx)
 	go func() {
 		defer folderCancel()
 		for {
