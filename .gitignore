@@ -1,2 +1,4 @@
 .tokens
 cmd/scraper/scraper
+cmd/ingester/out/
+cmd/ingester/ingester
