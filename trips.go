@@ -1,7 +1,13 @@
 package sharealyzer
 
 import (
+	"time"
+
 	"github.com/umahmood/haversine"
+)
+
+var (
+	TripNeverFinishedTime = time.Hour * 48
 )
 
 func ClassifyTrip(in <-chan *Trip) <-chan *Trip {
@@ -72,6 +78,10 @@ func (t *TripAggregator) Aggregate(in <-chan ScrapeResult) <-chan *Trip {
 					trip.Distance = distanceKm
 					delete(t.unfinishedTrips, id)
 					out <- trip
+				} else if trip.StartTime.After(time.Now().Add(TripNeverFinishedTime)) {
+					// Ensure that our trip map doesn't grow without bounds. After 48h we assume that a trip will
+					// never finish. The scooter may be broken, lost etc.
+					delete(t.unfinishedTrips, id)
 				}
 			}
 			t.lastScooters = scooters
