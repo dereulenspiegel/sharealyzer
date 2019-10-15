@@ -1,6 +1,9 @@
 package cripper
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // ScooterState represents the current state the scooter is in. For most APIs this is probably IDLE_RENTABLE
 type ScooterState string
@@ -26,15 +29,63 @@ func NewGeoLocation(lat, long float64) *GeoLocation {
 	}
 }
 
+type ScrapeResult interface {
+	ScrapeFile
+	Scooters() []*Scooter
+}
+
+type DefaultScrapeResult struct {
+	date     time.Time
+	scooters []*Scooter
+	provider string
+}
+
+func (d *DefaultScrapeResult) ScrapeDate() time.Time {
+	return d.date
+}
+
+func (d *DefaultScrapeResult) Scooters() []*Scooter {
+	return d.scooters
+}
+
+func (d *DefaultScrapeResult) Provider() string {
+	return d.provider
+}
+
+func (d *DefaultScrapeResult) Content() []byte {
+	data, _ := json.Marshal(d.scooters)
+	return data
+}
+
+func NewScrapeResult(provider string, date time.Time, scooters []*Scooter) ScrapeResult {
+	return &DefaultScrapeResult{
+		date:     date,
+		scooters: scooters,
+		provider: provider,
+	}
+}
+
 // Scooter represents a generic eScooter
 type Scooter struct {
-	ID          string
-	Provider    string
-	State       ScooterState
-	Location    *GeoLocation
-	ChargeLevel float64
-	LastUpdate  time.Time
+	ID                   string
+	Provider             string
+	State                ScooterState
+	Location             *GeoLocation
+	ChargeLevel          float64
+	LastUpdate           time.Time
+	QRContent            string
+	StateUpdatedByUserID string
+	InitPrice            int
+	UnitPrice            int
 }
+
+type TripType string
+
+const (
+	CUSTOMER_TRIP   TripType = "CUSTOMER_TRIP"
+	CHARGING_TRIP   TripType = "CHARGING_TRIP"
+	RELOCATION_TRIP TripType = "RELOCATION_TRIP"
+)
 
 // Trip represents a user initiated journey between two locations.
 type Trip struct {
@@ -51,4 +102,5 @@ type Trip struct {
 	StartTime        time.Time     `json:"start_time"`
 	EndTime          time.Time     `json:"end_time"`
 	Distance         float64       `json:"distance"` // Distance in kilometers
+	Type             TripType
 }
