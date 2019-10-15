@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dereulenspiegel/cripper"
+	"github.com/dereulenspiegel/sharealyzer"
 	"github.com/fsnotify/fsnotify"
 	"github.com/pkg/errors"
 	"github.com/umahmood/haversine"
@@ -174,7 +174,7 @@ func SplitChan(in <-chan *ScrapeResult) (<-chan *ScrapeResult, <-chan *ScrapeRes
 
 // TripAggregator tries to aggregate ScrapeResults to Trips
 type TripAggregator struct {
-	unfinishedTrips map[string]*cripper.Trip
+	unfinishedTrips map[string]*sharealyzer.Trip
 	lastScooters    Scooters
 
 	debug bool
@@ -183,25 +183,25 @@ type TripAggregator struct {
 // NewTripAggregator creates a new TripAggregator
 func NewTripAggregator() *TripAggregator {
 	return &TripAggregator{
-		unfinishedTrips: make(map[string]*cripper.Trip),
+		unfinishedTrips: make(map[string]*sharealyzer.Trip),
 		lastScooters:    NewScooters([]*Scooter{}),
 		debug:           true,
 	}
 }
 
 // Aggregate takes a channel of ScrapeResult and returns a channel of aggregated Trips
-func (c *TripAggregator) Aggregate(in <-chan *ScrapeResult) <-chan *cripper.Trip {
-	out := make(chan *cripper.Trip, 100)
+func (c *TripAggregator) Aggregate(in <-chan *ScrapeResult) <-chan *sharealyzer.Trip {
+	out := make(chan *sharealyzer.Trip, 100)
 	go func() {
 		for res := range in {
 			scooters := NewScooters(res.Scooters)
 			vanishedScooter := scooters.Difference(c.lastScooters)
 			for id, scooter := range vanishedScooter {
-				trip := &cripper.Trip{
+				trip := &sharealyzer.Trip{
 					ScooterID:        id,
 					ScooterProvider:  "circ",
 					StartChargeLevel: float64(scooter.EnergyLevel),
-					StartLocation:    cripper.NewGeoLocation(scooter.Latitude, scooter.Longitude),
+					StartLocation:    sharealyzer.NewGeoLocation(scooter.Latitude, scooter.Longitude),
 					StartTime:        res.ScrapeDate(),
 				}
 				c.unfinishedTrips[id] = trip
@@ -210,7 +210,7 @@ func (c *TripAggregator) Aggregate(in <-chan *ScrapeResult) <-chan *cripper.Trip
 			for id, trip := range c.unfinishedTrips {
 				if scooter, exists := scooters[id]; exists {
 					trip.EndChargeLevel = float64(scooter.EnergyLevel)
-					trip.EndLocation = cripper.NewGeoLocation(scooter.Latitude, scooter.Longitude)
+					trip.EndLocation = sharealyzer.NewGeoLocation(scooter.Latitude, scooter.Longitude)
 					trip.UserID = scooter.StateUpdatedByUserIdentifier
 					trip.EndTime = res.ScrapeDate()
 					trip.Duration = trip.EndTime.Sub(trip.StartTime)
@@ -458,17 +458,17 @@ func extractDateFromFilename(fileName string) (time.Time, error) {
 	return time.Parse(time.RFC3339, stringDate)
 }
 
-func ConvertScrapeResult(in <-chan *ScrapeResult) <-chan cripper.ScrapeResult {
-	out := make(chan cripper.ScrapeResult, 100)
+func ConvertScrapeResult(in <-chan *ScrapeResult) <-chan sharealyzer.ScrapeResult {
+	out := make(chan sharealyzer.ScrapeResult, 100)
 	go func() {
 		for res := range in {
-			sc := make([]*cripper.Scooter, len(res.Scooters))
+			sc := make([]*sharealyzer.Scooter, len(res.Scooters))
 			for i, circScooter := range res.Scooters {
-				sc[i] = &cripper.Scooter{
+				sc[i] = &sharealyzer.Scooter{
 					ID:                   circScooter.Identifier,
 					Provider:             "circ",
-					State:                cripper.IdleRentable,
-					Location:             cripper.NewGeoLocation(circScooter.Latitude, circScooter.Longitude),
+					State:                sharealyzer.IdleRentable,
+					Location:             sharealyzer.NewGeoLocation(circScooter.Latitude, circScooter.Longitude),
 					ChargeLevel:          float64(circScooter.EnergyLevel),
 					LastUpdate:           res.ScrapeDate(),
 					QRContent:            circScooter.QrCode,
@@ -477,7 +477,7 @@ func ConvertScrapeResult(in <-chan *ScrapeResult) <-chan cripper.ScrapeResult {
 					UnitPrice:            circScooter.Price,
 				}
 			}
-			out <- cripper.NewScrapeResult("circ", res.Date, sc)
+			out <- sharealyzer.NewScrapeResult("circ", res.Date, sc)
 		}
 		close(out)
 	}()

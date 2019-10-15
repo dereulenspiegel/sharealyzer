@@ -1,4 +1,4 @@
-package cripper
+package sharealyzer
 
 import (
 	"github.com/umahmood/haversine"

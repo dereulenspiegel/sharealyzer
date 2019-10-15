@@ -1,4 +1,4 @@
-module github.com/dereulenspiegel/cripper
+module github.com/dereulenspiegel/sharealyzer
 
 go 1.13
 

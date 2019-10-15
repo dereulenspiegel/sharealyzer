@@ -3,3 +3,4 @@ cmd/scraper/scraper
 cmd/ingester/out/
 cmd/ingester/ingester
 dist/
+testdata/

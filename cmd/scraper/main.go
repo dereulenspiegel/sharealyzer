@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dereulenspiegel/cripper/circ"
+	"github.com/dereulenspiegel/sharealyzer/circ"
 )
 
 var (

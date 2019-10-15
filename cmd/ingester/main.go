@@ -5,8 +5,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/dereulenspiegel/cripper"
-	"github.com/dereulenspiegel/cripper/circ"
+	"github.com/dereulenspiegel/sharealyzer"
+	"github.com/dereulenspiegel/sharealyzer/circ"
 	"github.com/umahmood/haversine"
 )
 
@@ -50,10 +50,10 @@ func main() {
 	log.Printf("Have found %d unique userIDs", len(uniqueUserIDs))
 
 	lastScooters := make(scooters)
-	var trips []*cripper.Trip
-	var unusuallyLongTrips []*cripper.Trip
-	var chargingTrips []*cripper.Trip
-	unfinishedTrips := make(map[string]*cripper.Trip)
+	var trips []*sharealyzer.Trip
+	var unusuallyLongTrips []*sharealyzer.Trip
+	var chargingTrips []*sharealyzer.Trip
+	unfinishedTrips := make(map[string]*sharealyzer.Trip)
 	filesInspected := 0
 	err = aggregator.Aggregate(start, end, func(fileTime time.Time, sc []*circ.Scooter) error {
 		scooters := newScooters(sc)
@@ -61,11 +61,11 @@ func main() {
 
 		for id, scooter := range vanishedScooter {
 			//log.Printf("Starting trip for scooter: %s", scooter.Identifier)
-			trip := &cripper.Trip{
+			trip := &sharealyzer.Trip{
 				ScooterID:        id,
 				ScooterProvider:  "circ",
 				StartChargeLevel: float64(scooter.EnergyLevel),
-				StartLocation:    cripper.NewGeoLocation(scooter.Latitude, scooter.Longitude),
+				StartLocation:    sharealyzer.NewGeoLocation(scooter.Latitude, scooter.Longitude),
 				StartTime:        fileTime,
 			}
 			unfinishedTrips[id] = trip
@@ -76,7 +76,7 @@ func main() {
 				//Scooter is available again, trip is finished
 
 				trip.EndChargeLevel = float64(scooter.EnergyLevel)
-				trip.EndLocation = cripper.NewGeoLocation(scooter.Latitude, scooter.Longitude)
+				trip.EndLocation = sharealyzer.NewGeoLocation(scooter.Latitude, scooter.Longitude)
 				trip.UserID = scooter.StateUpdatedByUserIdentifier
 				trip.EndTime = fileTime
 				trip.Duration = trip.EndTime.Sub(trip.StartTime)

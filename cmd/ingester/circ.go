@@ -12,7 +12,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/dereulenspiegel/cripper/circ"
+	"github.com/dereulenspiegel/sharealyzer/circ"
 )
 
 const folderTimeFormat = "2006-01-02"

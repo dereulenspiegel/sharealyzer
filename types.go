@@ -1,4 +1,4 @@
-package cripper
+package sharealyzer
 
 import (
 	"encoding/json"
@@ -103,4 +103,8 @@ type Trip struct {
 	EndTime          time.Time     `json:"end_time"`
 	Distance         float64       `json:"distance"` // Distance in kilometers
 	Type             TripType
+}
+
+type TripStore interface {
+	Store(t *Trip) error
 }
