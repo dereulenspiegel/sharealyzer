@@ -18,6 +18,7 @@ import (
 
 	"github.com/dereulenspiegel/cripper"
 	"github.com/fsnotify/fsnotify"
+	"github.com/pkg/errors"
 	"github.com/umahmood/haversine"
 )
 
@@ -58,7 +59,7 @@ func NewScraper(client *Client,
 
 // Scrape starts the scraping process with the specified interval and returns a channel with items containing
 // the scrape date and all scraped scooters
-func (c *Scraper) Scrape(ctx context.Context, scrapeInterval time.Duration) chan *ScrapeResult {
+func (c *Scraper) Scrape(ctx context.Context, scrapeInterval time.Duration) <-chan *ScrapeResult {
 	out := make(chan *ScrapeResult, 100)
 	go func() {
 		scrapeTimer := time.NewTimer(scrapeInterval)
@@ -157,7 +158,7 @@ func (c *ScrapeResult) Content() []byte {
 
 // SplitChan splits a channel of ScrapeResults so these results can be used in two different process like
 // storage and aggregation
-func SplitChan(in chan *ScrapeResult) (chan *ScrapeResult, chan *ScrapeResult) {
+func SplitChan(in <-chan *ScrapeResult) (<-chan *ScrapeResult, <-chan *ScrapeResult) {
 	out1 := make(chan *ScrapeResult, 100)
 	out2 := make(chan *ScrapeResult, 100)
 	go func() {
@@ -175,6 +176,8 @@ func SplitChan(in chan *ScrapeResult) (chan *ScrapeResult, chan *ScrapeResult) {
 type TripAggregator struct {
 	unfinishedTrips map[string]*cripper.Trip
 	lastScooters    Scooters
+
+	debug bool
 }
 
 // NewTripAggregator creates a new TripAggregator
@@ -182,14 +185,18 @@ func NewTripAggregator() *TripAggregator {
 	return &TripAggregator{
 		unfinishedTrips: make(map[string]*cripper.Trip),
 		lastScooters:    NewScooters([]*Scooter{}),
+		debug:           false,
 	}
 }
 
 // Aggregate takes a channel of ScrapeResult and returns a channel of aggregated Trips
-func (c *TripAggregator) Aggregate(in chan *ScrapeResult) <-chan *cripper.Trip {
+func (c *TripAggregator) Aggregate(in <-chan *ScrapeResult) <-chan *cripper.Trip {
 	out := make(chan *cripper.Trip, 100)
 	go func() {
 		for res := range in {
+			if c.debug {
+				log.Printf("Received scrape result from %s", res.ScrapeDate().Format(time.RFC3339))
+			}
 			scooters := NewScooters(res.Scooters)
 			vanishedScooter := scooters.Difference(c.lastScooters)
 			for id, scooter := range vanishedScooter {
@@ -262,6 +269,8 @@ type FileScraper struct {
 	folderWatcher          *fsnotify.Watcher
 	currentlyWatchedFolder string
 	watchMutex             *sync.Mutex
+
+	debug bool
 }
 
 // NewFileScraper creates a new FileScraper scraping the given baseDir
@@ -270,6 +279,7 @@ func NewFileScraper(baseDir string) *FileScraper {
 		baseDir:      baseDir,
 		fileNameChan: make(chan string, 10000),
 		watchMutex:   &sync.Mutex{},
+		debug:        false,
 	}
 }
 
@@ -280,7 +290,7 @@ func (c *FileScraper) Scrape(ctx context.Context) (<-chan *ScrapeResult, error) 
 
 	subFiles, err := ioutil.ReadDir(c.baseDir)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "Failed to read base directory")
 	}
 	for _, f := range subFiles {
 		if f.IsDir() {
@@ -290,11 +300,11 @@ func (c *FileScraper) Scrape(ctx context.Context) (<-chan *ScrapeResult, error) 
 	sort.Strings(subfolderNames)
 	c.fileWatcher, err = fsnotify.NewWatcher()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "Failed to create file watcher")
 	}
 	c.folderWatcher, err = fsnotify.NewWatcher()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "Failed to create folder watcher")
 	}
 
 	out := make(chan *ScrapeResult, 1000)
@@ -302,7 +312,7 @@ func (c *FileScraper) Scrape(ctx context.Context) (<-chan *ScrapeResult, error) 
 	buffering := true
 	err = c.folderWatcher.Add(c.baseDir)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "Failed to watch base dir")
 	}
 	folderCtx, folderCancel := context.WithCancel(ctx)
 	go func() {
@@ -327,9 +337,10 @@ func (c *FileScraper) Scrape(ctx context.Context) (<-chan *ScrapeResult, error) 
 		}
 
 	}()
-	err = c.fileWatcher.Add(subfolderNames[len(subfolderNames)-1])
+	c.currentlyWatchedFolder = subfolderNames[len(subfolderNames)-1]
+	err = c.fileWatcher.Add(c.currentlyWatchedFolder)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "Failed to watch latest sub folder %s", c.currentlyWatchedFolder)
 	}
 	fileCtx, fileCancel := context.WithCancel(ctx)
 	go func() {
@@ -341,7 +352,8 @@ func (c *FileScraper) Scrape(ctx context.Context) (<-chan *ScrapeResult, error) 
 				return
 			case evt := <-c.fileWatcher.Events:
 				if evt.Op == fsnotify.Create {
-					scrapeFilePath := filepath.Join(c.baseDir, c.currentlyWatchedFolder, evt.Name)
+					// FIXME this file is not really finished writing, we need to fix this
+					scrapeFilePath := evt.Name
 					res, err := c.handleNewFile(scrapeFilePath)
 					if err != nil {
 						log.Printf("[ERROR]: Failed to process created file %s: %s", evt.Name, err)
@@ -362,14 +374,18 @@ func (c *FileScraper) Scrape(ctx context.Context) (<-chan *ScrapeResult, error) 
 	go func() {
 		for _, subFolder := range subfolderNames {
 			subFilesInfos, err := ioutil.ReadDir(subFolder)
-			folderPath := filepath.Join(c.baseDir, subFolder)
 			if err != nil {
-				log.Fatalf("[ERROR] Failed to read directory %s: %s", folderPath, err)
+				log.Fatalf("[ERROR] Failed to read directory %s: %s", subFolder, err)
 				continue
 			}
+			scrapeFileNames := make([]string, 0, len(subFilesInfos))
+			for _, subInfo := range subFilesInfos {
+				scrapeFileNames = append(scrapeFileNames, filepath.Join(subFolder, subInfo.Name()))
+			}
+			sort.Strings(scrapeFileNames)
 
-			for _, scrapeFile := range subFilesInfos {
-				circFilePath := filepath.Join(folderPath, scrapeFile.Name())
+			for _, scrapeFile := range scrapeFileNames {
+				circFilePath := scrapeFile
 				res, err := c.handleNewFile(circFilePath)
 				if err != nil {
 					log.Fatalf("[ERROR] Failed to process file %s: %s", circFilePath, err)
@@ -378,19 +394,24 @@ func (c *FileScraper) Scrape(ctx context.Context) (<-chan *ScrapeResult, error) 
 				out <- res
 			}
 		}
+		c.watchMutex.Lock()
+		buffering = false
+		close(fileBufferChan)
+		// drain the buffer
 		for res := range fileBufferChan {
 			out <- res
 		}
-		c.watchMutex.Lock()
-		buffering = false
 		c.watchMutex.Unlock()
-		close(fileBufferChan)
+
 	}()
 
 	return out, nil
 }
 
 func (c *FileScraper) handleNewFile(path string) (*ScrapeResult, error) {
+	if c.debug {
+		log.Printf("Processing file %s", path)
+	}
 	scrapeFileName := filepath.Base(path)
 	scrapeFile, err := os.Open(path)
 	if err != nil {
