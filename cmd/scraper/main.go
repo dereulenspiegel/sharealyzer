@@ -99,7 +99,7 @@ func writeResult(scooters []*circ.Scooter) {
 	}
 }
 
-func scrape(ctx context.Context, cc *circ.CircClient) {
+func scrape(ctx context.Context, cc *circ.Client) {
 	scrapeTimer := time.NewTimer(*scrapeInterval)
 	for {
 		select {
@@ -113,7 +113,7 @@ func scrape(ctx context.Context, cc *circ.CircClient) {
 	}
 }
 
-func doScrape(cc *circ.CircClient) {
+func doScrape(cc *circ.Client) {
 	retryCounter := 0
 	maxRetries := 5
 
