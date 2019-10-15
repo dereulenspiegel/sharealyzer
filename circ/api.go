@@ -20,7 +20,7 @@ const (
 
 var (
 	// DefaultTokenRefreshDuration is the duration we usually wait before refreshing our tokens
-	DefaultTokenRefreshDuration = time.Minute * 5
+	DefaultTokenRefreshDuration = time.Minute * 60
 )
 
 // TokenStore is a simple interface to store and retrieve the currently used tokens
@@ -31,23 +31,23 @@ type TokenStore interface {
 
 // WithTokenStore sets the specified TokenStore as token store of the circ client
 func WithTokenStore(store TokenStore) ClientOption {
-	return func(c *CircClient) {
+	return func(c *Client) {
 		c.tokenStore = store
 	}
 }
 
 // WithHTTPClient allows you to specify a custom http client instead of Go's default client
 func WithHTTPClient(client *http.Client) ClientOption {
-	return func(c *CircClient) {
+	return func(c *Client) {
 		c.httpClient = client
 	}
 }
 
 // ClientOption lets you specify options for the client
-type ClientOption func(c *CircClient)
+type ClientOption func(c *Client)
 
-// CircClient is a client to the circ API
-type CircClient struct {
+// Client is a client to the circ API
+type Client struct {
 	httpClient *http.Client
 
 	accessToken      string
@@ -57,8 +57,8 @@ type CircClient struct {
 }
 
 // New creates a new client for the Circ API with the specified options
-func New(opts ...ClientOption) *CircClient {
-	c := &CircClient{
+func New(opts ...ClientOption) *Client {
+	c := &Client{
 		httpClient: http.DefaultClient,
 	}
 	for _, opt := range opts {
@@ -75,7 +75,7 @@ func New(opts ...ClientOption) *CircClient {
 	return c
 }
 
-func (c *CircClient) checkResponse(resp *http.Response) error {
+func (c *Client) checkResponse(resp *http.Response) error {
 	if resp.StatusCode >= 400 {
 		fmt.Printf("Received error from circ API")
 		var circErr CircError
@@ -88,7 +88,7 @@ func (c *CircClient) checkResponse(resp *http.Response) error {
 	return nil
 }
 
-func (c *CircClient) request(method string, url string, body io.Reader) (*http.Request, error) {
+func (c *Client) request(method string, url string, body io.Reader) (*http.Request, error) {
 	r, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return nil, err
@@ -103,7 +103,7 @@ func (c *CircClient) request(method string, url string, body io.Reader) (*http.R
 	return r, nil
 }
 
-func (c *CircClient) refreshAuth() error {
+func (c *Client) refreshAuth() error {
 	if time.Now().Before(c.lastTokenRefresh.Add(DefaultTokenRefreshDuration)) {
 		return nil
 	}
@@ -146,14 +146,14 @@ func (c *CircClient) refreshAuth() error {
 }
 
 // ForceTokenRefresh forces a token refresh, used for testing
-func (c *CircClient) ForceTokenRefresh() error {
+func (c *Client) ForceTokenRefresh() error {
 	return c.refreshAuth()
 }
 
 // Login starts authentication against the circ API you need to specify your phone numbers country prefiy
 // i.e. '+49' and your phone number without the leading zero and a callback function which returns the received
 // auth token.
-func (c *CircClient) Login(countryCode, phoneNumber string, provideCode func() string) error {
+func (c *Client) Login(countryCode, phoneNumber string, provideCode func() string) error {
 	buf := &bytes.Buffer{}
 	json.NewEncoder(buf).Encode(map[string]string{
 		"phoneCountryCode": countryCode,
@@ -212,7 +212,7 @@ func (c *CircClient) Login(countryCode, phoneNumber string, provideCode func() s
 // Scooters returns all available scooters at this point in time. You need to specify the area
 // to scrape as a rectangle with a top left and a bottom right corner. It is unknown how large
 // this rectangle can get before things break down
-func (c *CircClient) Scooters(latitudeTopLeft,
+func (c *Client) Scooters(latitudeTopLeft,
 	longitudeTopLeft, latitudeBottomRight, longitudeBottomRight float64) ([]*Scooter, error) {
 
 	if err := c.refreshAuth(); err != nil {
